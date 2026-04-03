@@ -9,6 +9,7 @@
  * - 执行摘要邮件 + 错误通知
  * - dryRun 模式
  * - AI 结果去重
+ * - Pin to Inbox：将符合条件的邮件移入收件箱并标记未读
  ***********************/
 
 const CONFIG = {
@@ -94,7 +95,22 @@ const CONFIG = {
   dashboardSheetName: "Daily Actions",
 
   // ===== 去重保留天数 =====
-  dedupeRetentionDays: 45
+  dedupeRetentionDays: 45,
+
+  // ===== Pin to Inbox =====
+  pinToInboxEnabled: true,
+  pinCriteria: [
+    "from:rochedalss@epublisher.net.au subject:Rochedale State School",   // 1. 备用
+    "",   // 2. 备用
+    "",   // 3. 备用
+    "",   // 4. 备用
+    "",   // 5. 备用
+    "",   // 6. 备用
+    "",   // 7. 备用
+    "",   // 8. 备用
+    "",   // 9. 备用
+    "",   // 10. 备用
+  ],
 };
 
 
@@ -113,6 +129,11 @@ function gmailAutoCleanV62() {
     executionSummary.push(`Run time: ${runStartedAt}`);
     executionSummary.push(`Dry run: ${CONFIG.dryRun}`);
     executionSummary.push(`AI runs in dry mode: ${CONFIG.aiRunInDryMode}`);
+
+    // 0) Pin 置顶 — 最先运行，避免被后续模块标记已读
+    const pinResults = pinImportantEmailsToInbox();
+    executionSummary.push("=== Pin to Inbox ===");
+    pinResults.forEach(line => executionSummary.push(line));
 
     // 1) 分类清理
     const categoryResults = processConfiguredCategories();
@@ -166,6 +187,68 @@ function gmailAutoCleanV62() {
     if (CONFIG.sendErrorEmail) sendErrorAlert(error);
     throw error;
   }
+}
+
+
+/* =========================
+ * 0) Pin to Inbox
+ * 将符合 CONFIG.pinCriteria 搜索条件的邮件
+ * 移入 inbox 并标记未读，模拟置顶效果
+ * 最先运行，避免被后续模块标记已读
+ * ========================= */
+
+function pinImportantEmailsToInbox() {
+  const results = [];
+
+  if (!CONFIG.pinToInboxEnabled) {
+    results.push("Pin to Inbox: 已禁用，跳过");
+    return results;
+  }
+
+  const criteria = (CONFIG.pinCriteria || []).filter(c => c && c.trim() !== "");
+
+  if (criteria.length === 0) {
+    results.push("Pin to Inbox: 没有设置任何搜索条件，跳过");
+    return results;
+  }
+
+  let totalPinned = 0;
+
+  criteria.forEach((criterion, index) => {
+    const query = `${criterion.trim()} -in:inbox newer_than:1d`;
+    Logger.log(`Pin criteria ${index + 1}: "${query}"`);
+
+    try {
+      const threads = GmailApp.search(query, 0, 20);
+
+      if (threads.length === 0) {
+        Logger.log(`Pin criteria ${index + 1}: 没有符合条件的邮件`);
+        return;
+      }
+
+      threads.forEach(thread => {
+        const dedupKey = `PIN::${thread.getId()}`;
+        if (isProcessedKey(dedupKey)) {
+          Logger.log(`Pin: 跳过已处理 thread：${thread.getFirstMessageSubject()}`);
+          return;
+        }
+
+        if (!CONFIG.dryRun) {
+          thread.moveToInbox();
+          thread.markUnread();
+          markProcessedKey(dedupKey);
+          Logger.log(`Pin: 已置顶 → ${thread.getFirstMessageSubject()}`);
+          totalPinned++;
+        }
+      });
+
+    } catch (e) {
+      Logger.log(`Pin criteria ${index + 1} 执行出错：${e}`);
+    }
+  });
+
+  results.push(`Pin to Inbox: 共置顶 ${totalPinned} 封邮件`);
+  return results;
 }
 
 
@@ -630,7 +713,7 @@ function cleanupOldDedupeKeys() {
   const maxAge = CONFIG.dedupeRetentionDays * 24 * 60 * 60 * 1000;
 
   Object.keys(all).forEach(key => {
-    if (!key.startsWith("DEDUP::")) return;
+    if (!key.startsWith("DEDUP::") && !key.startsWith("PIN::")) return;
     const ts = Number(all[key] || 0);
     if (!ts || now - ts > maxAge) props.deleteProperty(key);
   });
@@ -720,6 +803,7 @@ function validateAutoLabelConfig() {
   Logger.log("validateAutoLabelConfig: OK");
 }
 
+
 /* =========================
  * Complete All AUTO Tasks
  * 将 ! AUTO Tasks 列表里所有未完成的 task 标记为已完成
@@ -727,7 +811,7 @@ function validateAutoLabelConfig() {
 
 function completeAllAutoTasks() {
   const taskListId = getOrCreateTaskListId(CONFIG.taskListName);
-  
+
   let completedCount = 0;
   let pageToken = null;
 
@@ -755,3 +839,6 @@ function completeAllAutoTasks() {
   Logger.log(`completeAllAutoTasks: 已完成 ${completedCount} 个 tasks`);
   return completedCount;
 }
+
+
+
