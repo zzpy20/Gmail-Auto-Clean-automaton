@@ -21,7 +21,7 @@ const CONFIG = {
   // ===== 分类规则 =====
   categories: {
     purchases:  { enabled: false },
-    updates:    { enabled: true, olderThanDays: 14, action: "markRead" },
+    updates:    { enabled: true, olderThanDays:14, action: "markRead" },
     forums:     { enabled: true, action: "markRead" },
     promotions: { enabled: true, action: "markReadAndArchive" },
     social:     { enabled: true, olderThanDays: 14, action: "markRead" }
@@ -36,9 +36,15 @@ const CONFIG = {
     // 银行
     "commbank", "anz", "nab", "westpac",
     // 核心账号
-    "google.com", "apple.com",
+    // 核心账号
+    "@accounts.google.com",   // Google 账号安全通知
+    "@googlemail.com",        // Gmail 官方邮件
+    "apple.com",
+   
     // 医疗
-    "health", "hospital"
+    "@health.qld.gov.au", "hospital"
+
+    
   ],
 
   // ===== 邮件通知 =====
@@ -101,9 +107,10 @@ const CONFIG = {
   pinToInboxEnabled: true,
   pinCriteria: [
     "from:rochedalss@epublisher.net.au subject:Rochedale State School",   // 1. 备用
-    "",   // 2. 备用
-    "",   // 3. 备用
-    "",   // 4. 备用
+    "from:(@eq.edu.au OR @gov.au)",   // 2. 备用
+    "from:(@commbank.com.au OR @cba.com.au OR @westpac.com.au OR @anz.com OR @nab.com.au OR @paypal.com OR @stripe.com OR @linkt.com.au)",   // 3. 备用
+    "subject:(urgent OR invoice OR bill OR quote OR due OR overdue OR fine OR Reference OR infringement OR rego OR ATO OR myGov OR reminder OR 'action required' OR 'important notice')",   // 4. 备用
+   
     "",   // 5. 备用
     "",   // 6. 备用
     "",   // 7. 备用
