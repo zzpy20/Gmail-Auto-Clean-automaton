@@ -10,6 +10,7 @@
  * - dryRun 模式
  * - AI 结果去重
  * - Pin to Inbox：将符合条件的邮件移入收件箱并标记未读
+ * last version before the web UI dashboard 
  ***********************/
 
 const CONFIG = {
@@ -845,6 +846,91 @@ function completeAllAutoTasks() {
 
   Logger.log(`completeAllAutoTasks: 已完成 ${completedCount} 个 tasks`);
   return completedCount;
+}
+
+/***********************
+ * Calendar API - add this to your existing Gmail Auto Clean Apps Script
+ * Exposes calendar data as JSON for the calendar dashboard
+ *
+ * Setup:
+ * 1. Paste this file's contents into your existing Apps Script project
+ * 2. In Script Properties, add: DASHBOARD_TOKEN = <any long random string>
+ * 3. Deploy > New Deployment > Web App
+ *    - Execute as: Me
+ *    - Who has access: Anyone
+ * 4. Copy the Web App URL and store it as APPS_SCRIPT_URL in your Cloudflare Worker secret
+ ***********************/
+
+function doGet(e) {
+  const token = PropertiesService.getScriptProperties().getProperty('DASHBOARD_TOKEN');
+  if (!token || e.parameter.token !== token) {
+    return jsonResponse({ error: 'Unauthorized' }, 401);
+  }
+
+  const action = e.parameter.action;
+
+  if (action === 'calendars') {
+    return handleGetCalendars();
+  } else if (action === 'events') {
+    return handleGetEvents(e.parameter);
+  }
+
+  return jsonResponse({ error: 'Unknown action' }, 400);
+}
+
+function handleGetCalendars() {
+  const calendars = CalendarApp.getAllCalendars();
+  const result = calendars.map(cal => ({
+    id: cal.getId(),
+    name: cal.getName(),
+    color: cal.getColor(),
+  }));
+  return jsonResponse(result);
+}
+
+function handleGetEvents(params) {
+  if (!params.start || !params.end) {
+    return jsonResponse({ error: 'Missing start or end' }, 400);
+  }
+
+  const start = new Date(params.start);
+  const end = new Date(params.end);
+  // Extend end to end of day
+  end.setHours(23, 59, 59, 999);
+
+  const allEvents = [];
+  const calendars = CalendarApp.getAllCalendars();
+
+  for (const cal of calendars) {
+    try {
+      const events = cal.getEvents(start, end);
+      for (const event of events) {
+        allEvents.push({
+          id: event.getId(),
+          title: event.getTitle(),
+          start: event.getStartTime().toISOString(),
+          end: event.getEndTime().toISOString(),
+          allDay: event.isAllDayEvent(),
+          description: event.getDescription() || '',
+          location: event.getLocation() || '',
+          calendarId: cal.getId(),
+          calendarName: cal.getName(),
+          color: cal.getColor(),
+        });
+      }
+    } catch (err) {
+      // Skip calendars that throw (e.g. read-only external calendars)
+      Logger.log('Skipping calendar ' + cal.getName() + ': ' + err);
+    }
+  }
+
+  return jsonResponse(allEvents);
+}
+
+function jsonResponse(data, status) {
+  const output = ContentService.createTextOutput(JSON.stringify(data));
+  output.setMimeType(ContentService.MimeType.JSON);
+  return output;
 }
 
 
