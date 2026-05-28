@@ -1,3 +1,6 @@
+# Removed pages — redirect to home
+/call-done / 301
+
 # Serve index.html for date-based URLs (e.g. /2026-05-28)
 # API routes are handled by Pages Functions and take priority over this rule
 /* /index.html 200
