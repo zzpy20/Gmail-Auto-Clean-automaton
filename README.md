@@ -40,7 +40,7 @@ functions/
     latest-run.js            # GET  — reads latest digest (KV → Apps Script fallback)
     write-run.js             # POST — called by Apps Script to save each day's digest
     run/[date].js            # GET  — reads a specific day's digest from KV
-_redirects                   # Serves index.html for date-based URLs (/2026-05-28)
+_redirects                   # SPA routing for date URLs + 301 redirects for removed pages
 ```
 
 ---
