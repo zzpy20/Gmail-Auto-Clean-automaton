@@ -36,15 +36,12 @@ const CONFIG = {
     // 银行
     "commbank", "anz", "nab", "westpac",
     // 核心账号
-    // 核心账号
     "@accounts.google.com",   // Google 账号安全通知
     "@googlemail.com",        // Gmail 官方邮件
     "apple.com",
 
     // 医疗
     "@health.qld.gov.au", "hospital"
-
-
   ],
 
   // ===== 邮件通知 =====
@@ -57,7 +54,6 @@ const CONFIG = {
   aiRunInDryMode: true,
   aiModel: "gemini-2.5-flash",
   geminiApiKey: PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY"),
-  // aiSearchQuery: 'in:inbox is:unread -is:starred newer_than:1d',
   aiSearchQuery: 'in:inbox is:unread -is:starred newer_than:1d -label:!-Call',
   aiMaxThreads: 20,
   aiMaxBodyCharsPerEmail: 1200,
@@ -106,11 +102,10 @@ const CONFIG = {
   // ===== Pin to Inbox =====
   pinToInboxEnabled: true,
   pinCriteria: [
-    "from:rochedalss@epublisher.net.au subject:Rochedale State School",   // 1. 备用
-    "from:(@eq.edu.au OR @gov.au)",   // 2. 备用
-    "from:(@commbank.com.au OR @cba.com.au OR @westpac.com.au OR @anz.com OR @nab.com.au OR @paypal.com OR @stripe.com OR @linkt.com.au)",   // 3. 备用
-    "subject:(urgent OR invoice OR bill OR quote OR due OR overdue OR fine OR Reference OR infringement OR rego OR ATO OR myGov OR reminder OR 'action required' OR 'important notice')",   // 4. 备用
-
+    "from:rochedalss@epublisher.net.au subject:Rochedale State School",
+    "from:(@eq.edu.au OR @gov.au)",
+    "from:(@commbank.com.au OR @cba.com.au OR @westpac.com.au OR @anz.com OR @nab.com.au OR @paypal.com OR @stripe.com OR @linkt.com.au)",
+    "subject:(urgent OR invoice OR bill OR quote OR due OR overdue OR fine OR Reference OR infringement OR rego OR ATO OR myGov OR reminder OR 'action required' OR 'important notice')",
     "",   // 5. 备用
     "",   // 6. 备用
     "",   // 7. 备用
@@ -179,8 +174,8 @@ function gmailAutoCleanV62() {
         executionSummary.push("Dashboard updated.");
       }
 
-      // 5b) 写 Script Properties，供 Web Dashboard 使用
-      saveLatestRunToProperties({
+      // 5b) 写入 Cloudflare KV，供 Web Dashboard 按日期查阅
+      const latestRunData = {
         run_time: runStartedAt.toISOString(),
         dry_run:  CONFIG.dryRun,
         stats: {
@@ -199,7 +194,10 @@ function gmailAutoCleanV62() {
         must_do:        buildSerializableItems(aiResult.must_do,        aiResult.emailMap),
         schedule_later: buildSerializableItems(aiResult.schedule_later, aiResult.emailMap),
         info_only:      buildSerializableItems(aiResult.info_only,      aiResult.emailMap),
-      });
+      };
+
+      saveLatestRunToProperties(latestRunData);
+      if (!CONFIG.dryRun) writeRunToDashboard(latestRunData);
     }
 
     // 6) 发汇总邮件 — dashboard link at top
@@ -333,10 +331,8 @@ function processQueryWithRule(query, action) {
   while (true) {
     let threads;
     if (CONFIG.dryRun) {
-      // Dry-run 模式：邮件没有被真正处理，需要用 start 分页往后翻
       threads = GmailApp.search(query, start, CONFIG.batchSize);
     } else {
-      // Non-dry-run 模式：处理完的邮件自动从结果消失，每次从 0 开始即可
       threads = GmailApp.search(query, 0, CONFIG.batchSize);
     }
 
@@ -495,7 +491,7 @@ function buildDailyActionsWithAI() {
 
   const emailMap = {};
   emailItems.forEach(item => {
-    item.thread_id = item.thread.getId();   // ← stored for web dashboard links
+    item.thread_id = item.thread.getId();   // stored for web dashboard links
     emailMap[item.source_index] = item;
   });
 
@@ -768,7 +764,6 @@ function shouldSkipThread(thread) {
   const latest = getLatestMessage(thread);
   if (!latest) return false;
 
-  // 跳过带特殊处理标签的邮件，交给对应模块处理
   const labelNames = getThreadLabelNames(thread);
   if (labelNames.has('! Call')) {
     Logger.log(`Skipped thread due to ! Call label: ${latest.getSubject()}`);
@@ -923,7 +918,6 @@ function handleGetEvents(params) {
 
   const start = new Date(params.start);
   const end = new Date(params.end);
-  // Extend end to end of day
   end.setHours(23, 59, 59, 999);
 
   const allEvents = [];
@@ -947,7 +941,6 @@ function handleGetEvents(params) {
         });
       }
     } catch (err) {
-      // Skip calendars that throw (e.g. read-only external calendars)
       Logger.log('Skipping calendar ' + cal.getName() + ': ' + err);
     }
   }
@@ -978,30 +971,56 @@ function jsonResponse(data, status) {
 
 /**
  * Converts AI result items into plain objects safe for JSON serialisation.
- * Relies on thread_id being set on emailMap items inside buildDailyActionsWithAI.
+ * Includes body_snippet for preview in the web dashboard.
  */
 function buildSerializableItems(items, emailMap) {
   return (items || []).map(item => {
     const e = emailMap[item.source_index] || {};
     return {
-      title:     item.title    || '',
-      due_date:  item.due_date || '',
-      reason:    item.reason   || '',
-      from:      e.from        || '',
-      subject:   e.subject     || '',
-      thread_id: e.thread_id   || '',
+      title:        item.title    || '',
+      due_date:     item.due_date || '',
+      reason:       item.reason   || '',
+      from:         e.from        || '',
+      subject:      e.subject     || '',
+      thread_id:    e.thread_id   || '',
+      body_snippet: (e.body       || '').slice(0, 300),
     };
   });
 }
 
 /**
- * Persists the full run snapshot to Script Properties for the web dashboard.
- * A typical run snapshot is 5–15 KB; well within the 500 KB total limit.
+ * Persists the full run snapshot to Script Properties for the Apps Script
+ * doGet fallback (used before the first Cloudflare KV write).
  */
 function saveLatestRunToProperties(data) {
   const json = JSON.stringify(data);
   PropertiesService.getScriptProperties().setProperty('LATEST_RUN_DATA', json);
   Logger.log(`Saved latest run data to Script Properties (${json.length} bytes).`);
+}
+
+/**
+ * POSTs the run data to Cloudflare KV via the /api/write-run Pages Function.
+ * Stores keyed by date (e.g. "2026-05-28") so each day is accessible at
+ * https://dash-gmail.1000600.xyz/2026-05-28
+ */
+function writeRunToDashboard(data) {
+  const token = PropertiesService.getScriptProperties().getProperty('DASHBOARD_TOKEN');
+  if (!token) {
+    Logger.log('DASHBOARD_TOKEN not set in Script Properties — skipping KV write.');
+    return;
+  }
+  try {
+    const response = UrlFetchApp.fetch('https://dash-gmail.1000600.xyz/api/write-run', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'X-Dashboard-Token': token },
+      payload: JSON.stringify(data),
+      muteHttpExceptions: true
+    });
+    Logger.log(`Dashboard KV write: HTTP ${response.getResponseCode()} — ${response.getContentText()}`);
+  } catch (e) {
+    Logger.log(`Dashboard KV write failed: ${e}`);
+  }
 }
 
 /**
