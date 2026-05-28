@@ -216,7 +216,7 @@
       <h1>! Call — Done</h1>
       <div class="header-sub">Emails from the <strong>! Call - Done</strong> Gmail label</div>
     </div>
-    <button class="btn" onclick="reload()">↺ Refresh</button>
+    <button class="btn" onclick="forceRefresh()">↺ Refresh</button>
   </div>
 
   <div class="filter-bar">
@@ -232,10 +232,11 @@
 
 <script>
 const GMAIL_BASE = 'https://mail.google.com/mail/u/0/#all/';
-let currentRange = 'all';
-let currentPage  = 0;
-const itemStore  = new Map();
-let itemIdSeq    = 0;
+let currentRange  = 'all';
+let currentPage   = 0;
+const itemStore   = new Map();
+let itemIdSeq     = 0;
+let loadGeneration = 0; // incremented on each load to discard stale responses
 
 function esc(s) {
   return String(s || '')
@@ -264,10 +265,24 @@ function goPage(page) {
 
 function reload() { load(); }
 
-async function fetchData(range, page) {
-  const r = await fetch(`/api/call-done?range=${range}&page=${page}`);
+async function fetchData(range, page, bust = false) {
+  const url = `/api/call-done?range=${range}&page=${page}${bust ? '&refresh=1' : ''}`;
+  const r = await fetch(url);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
+}
+
+async function forceRefresh() {
+  const gen = ++loadGeneration;
+  document.getElementById('root').innerHTML = '<div class="loading">Refreshing…</div>';
+  try {
+    const data = await fetchData(currentRange, currentPage, true);
+    if (gen !== loadGeneration) return;
+    render(data);
+  } catch (e) {
+    if (gen !== loadGeneration) return;
+    document.getElementById('root').innerHTML = `<div class="error-msg">⚠ ${esc(e.message)}</div>`;
+  }
 }
 
 function renderItem(item) {
@@ -321,11 +336,14 @@ function render(data) {
 }
 
 async function load() {
+  const gen = ++loadGeneration;
   document.getElementById('root').innerHTML = '<div class="loading">Loading…</div>';
   try {
     const data = await fetchData(currentRange, currentPage);
+    if (gen !== loadGeneration) return; // discard if a newer load has started
     render(data);
   } catch (e) {
+    if (gen !== loadGeneration) return;
     document.getElementById('root').innerHTML = `<div class="error-msg">⚠ ${esc(e.message)}</div>`;
   }
 }
@@ -373,7 +391,7 @@ function showPop(itemEl) {
 }
 
 function hidePop() { pop.classList.remove('visible'); }
-function schedHide() { hideTimer = setTimeout(hidePop, 120); }
+function schedHide() { hideTimer = setTimeout(hidePop, 220); }
 function clearHide() { clearTimeout(hideTimer); }
 
 pop.addEventListener('mouseenter', clearHide);
