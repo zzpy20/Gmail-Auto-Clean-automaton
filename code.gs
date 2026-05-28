@@ -896,6 +896,8 @@ function doGet(e) {
     return handleGetEvents(e.parameter);
   } else if (action === 'latest_run') {
     return handleGetLatestRun();
+  } else if (action === 'call_done') {
+    return handleGetCallDone(e.parameter);
   }
 
   return jsonResponse({ error: 'Unknown action' }, 400);
@@ -946,6 +948,34 @@ function handleGetEvents(params) {
   }
 
   return jsonResponse(allEvents);
+}
+
+function handleGetCallDone(params) {
+  const page    = Math.max(0, parseInt(params.page  || '0'));
+  const range   = params.range || 'all';
+  const perPage = 10;
+
+  const dateFilter = range === 'week'   ? ' newer_than:7d'
+                   : range === 'month'  ? ' newer_than:30d'
+                   : range === '3month' ? ' newer_than:90d'
+                   : '';
+
+  const query   = `label:!-call---done${dateFilter}`;
+  const threads = GmailApp.search(query, page * perPage, perPage + 1);
+
+  const hasMore = threads.length > perPage;
+  const items   = threads.slice(0, perPage).map(thread => {
+    const msg = thread.getMessages()[thread.getMessageCount() - 1];
+    return {
+      thread_id: thread.getId(),
+      from:      msg.getFrom()    || '',
+      subject:   msg.getSubject() || '',
+      date:      msg.getDate().toISOString(),
+      snippet:   (msg.getPlainBody() || '').slice(0, 400),
+    };
+  });
+
+  return jsonResponse({ items, page, per_page: perPage, has_more: hasMore });
 }
 
 function handleGetLatestRun() {
