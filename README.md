@@ -18,15 +18,22 @@ Every day the Apps Script runs and:
 
 ---
 
-## Web Dashboard
+## Web Dashboards
 
-**URL:** `https://dash-gmail.1000600.xyz`
+### Daily Digest — `https://dash-gmail.1000600.xyz`
 
 - Browse any day via `https://dash-gmail.1000600.xyz/YYYY-MM-DD`
 - Navigate between days with ← Prev / Next → buttons
-- Each item shows sender, subject, email body preview, AI due-date badge
+- Must Do / Schedule Later / Info Only sections with AI due-date badges
 - Hover over any item for a full email preview popover
 - Click **Open →** to jump straight to the Gmail thread
+
+### ! Call — Done — `https://dash-gmail.1000600.xyz/call-done`
+
+- Reads live from the `! Call - Done` Gmail label
+- Date range filter: Within a week / 1 month / 3 months / All
+- 10 emails per page with Prev / Next pagination
+- Same hover popover with full email preview
 
 ---
 
@@ -34,12 +41,14 @@ Every day the Apps Script runs and:
 
 ```
 code.gs                      # Google Apps Script (paste into Apps Script editor)
-index.html                   # Cloudflare Pages dashboard UI
+index.html                   # Daily digest dashboard
+call-done.html               # ! Call — Done label dashboard
 functions/
   api/
     latest-run.js            # GET  — reads latest digest (KV → Apps Script fallback)
     write-run.js             # POST — called by Apps Script to save each day's digest
     run/[date].js            # GET  — reads a specific day's digest from KV
+    call-done.js             # GET  — proxies label search to Apps Script (page + range params)
 _redirects                   # Serves index.html for date-based URLs (/2026-05-28)
 ```
 
