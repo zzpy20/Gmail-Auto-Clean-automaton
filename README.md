@@ -71,6 +71,12 @@ _redirects                   # Serves index.html for date-based URLs (/2026-05-2
 5. Deploy as **Web App**: Execute as *Me*, Who has access *Anyone*
 6. Copy the Web App URL
 
+> **Updating the script later:** Use **Deploy → Manage deployments → Edit (pencil) → New version → Deploy** to keep the same URL. If you accidentally create a *New deployment* (which generates a new URL), update `APPS_SCRIPT_URL` in Cloudflare env vars and redeploy Pages:
+> ```bash
+> npx wrangler pages deploy . --project-name gmail-dashboard --branch main
+> ```
+> If the dashboard returns `{"error":"Unknown action"}`, the Apps Script deployment is serving stale code — create a new deployment and update the env var.
+
 ### 2 — Cloudflare Pages
 
 ```bash
