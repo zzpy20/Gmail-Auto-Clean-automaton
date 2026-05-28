@@ -10,7 +10,6 @@
  * - dryRun 模式
  * - AI 结果去重
  * - Pin to Inbox：将符合条件的邮件移入收件箱并标记未读
- * last version before the web UI dashboard 
  ***********************/
 
 const CONFIG = {
@@ -41,11 +40,11 @@ const CONFIG = {
     "@accounts.google.com",   // Google 账号安全通知
     "@googlemail.com",        // Gmail 官方邮件
     "apple.com",
-   
+
     // 医疗
     "@health.qld.gov.au", "hospital"
 
-    
+
   ],
 
   // ===== 邮件通知 =====
@@ -111,7 +110,7 @@ const CONFIG = {
     "from:(@eq.edu.au OR @gov.au)",   // 2. 备用
     "from:(@commbank.com.au OR @cba.com.au OR @westpac.com.au OR @anz.com OR @nab.com.au OR @paypal.com OR @stripe.com OR @linkt.com.au)",   // 3. 备用
     "subject:(urgent OR invoice OR bill OR quote OR due OR overdue OR fine OR Reference OR infringement OR rego OR ATO OR myGov OR reminder OR 'action required' OR 'important notice')",   // 4. 备用
-   
+
     "",   // 5. 备用
     "",   // 6. 备用
     "",   // 7. 备用
@@ -127,6 +126,7 @@ const CONFIG = {
  * ========================= */
 
 function gmailAutoCleanV62() {
+  const DASHBOARD_URL = 'https://dash-gmail.1000600.xyz';
   const runStartedAt = new Date();
   const executionSummary = [];
 
@@ -148,9 +148,10 @@ function gmailAutoCleanV62() {
     executionSummary.push("=== Category Processing ===");
     categoryResults.forEach(line => executionSummary.push(line));
 
-    // 2) 自动标签
+    // 2) 自动标签 — declared outside block so stats can read it below
+    let labelResults = [];
     if (CONFIG.autoLabelsEnabled) {
-      const labelResults = applyAutoLabels();
+      labelResults = applyAutoLabels();
       executionSummary.push("=== Auto Labels ===");
       labelResults.forEach(line => executionSummary.push(line));
     }
@@ -165,22 +166,45 @@ function gmailAutoCleanV62() {
       executionSummary.push(`Info only: ${aiResult.info_only.length}`);
     }
 
-    // 4) 执行动作：加星 / Tasks / Calendar
+    // 4) 执行动作：加星 / Tasks / Calendar — declared outside block so stats can read it below
+    let actionResults = [];
     if (aiResult) {
-      const actionResults = processAIActionResults(aiResult);
+      actionResults = processAIActionResults(aiResult);
       executionSummary.push("=== AI Action Execution ===");
       actionResults.forEach(line => executionSummary.push(line));
 
-      // 5) 写 Dashboard
+      // 5) 写 Dashboard (Google Sheets)
       if (CONFIG.dashboardEnabled) {
         appendActionsToDashboard(aiResult, runStartedAt);
         executionSummary.push("Dashboard updated.");
       }
+
+      // 5b) 写 Script Properties，供 Web Dashboard 使用
+      saveLatestRunToProperties({
+        run_time: runStartedAt.toISOString(),
+        dry_run:  CONFIG.dryRun,
+        stats: {
+          pin_to_inbox:        extractNum(pinResults,      /(\d+)\s*封邮件/),
+          updates_marked_read: extractNum(categoryResults, /Updates.*?:\s*(\d+)/),
+          forums_marked_read:  extractNum(categoryResults, /Forums.*?:\s*(\d+)/),
+          promotions_archived: extractNum(categoryResults, /Promotions.*?:\s*(\d+)/),
+          social_marked_read:  extractNum(categoryResults, /Social.*?:\s*(\d+)/),
+          finance_labeled:     extractNum(labelResults,    /Finance labeled:\s*(\d+)/),
+          school_labeled:      extractNum(labelResults,    /School labeled:\s*(\d+)/),
+          work_labeled:        extractNum(labelResults,    /Work labeled:\s*(\d+)/),
+          starred_count:       extractNum(actionResults,   /Starred.*?:\s*(\d+)/),
+          tasks_created:       extractNum(actionResults,   /Tasks created:\s*(\d+)/),
+          calendar_events:     extractNum(actionResults,   /Calendar events.*?:\s*(\d+)/),
+        },
+        must_do:        buildSerializableItems(aiResult.must_do,        aiResult.emailMap),
+        schedule_later: buildSerializableItems(aiResult.schedule_later, aiResult.emailMap),
+        info_only:      buildSerializableItems(aiResult.info_only,      aiResult.emailMap),
+      });
     }
 
-    // 6) 发汇总邮件
+    // 6) 发汇总邮件 — dashboard link at top
     if (CONFIG.sendExecutionSummaryEmail) {
-      let body = executionSummary.join("\n");
+      let body = `View dashboard: ${DASHBOARD_URL}\n\n` + executionSummary.join("\n");
       if (aiResult) {
         body += "\n\n=== 今日待办（来自邮件）===\n\n";
         body += formatActionDigest(aiResult);
@@ -470,7 +494,10 @@ function buildDailyActionsWithAI() {
   }
 
   const emailMap = {};
-  emailItems.forEach(item => { emailMap[item.source_index] = item; });
+  emailItems.forEach(item => {
+    item.thread_id = item.thread.getId();   // ← stored for web dashboard links
+    emailMap[item.source_index] = item;
+  });
 
   if (CONFIG.dryRun && !CONFIG.aiRunInDryMode) {
     return { must_do: [], schedule_later: [], info_only: [], emailMap };
@@ -638,7 +665,7 @@ function createCalendarEntry(item, emailItem) {
 
 
 /* =========================
- * 5) Dashboard
+ * 5) Dashboard (Google Sheets)
  * ========================= */
 
 function appendActionsToDashboard(aiResult, runStartedAt) {
@@ -848,17 +875,16 @@ function completeAllAutoTasks() {
   return completedCount;
 }
 
+
 /***********************
- * Calendar API - add this to your existing Gmail Auto Clean Apps Script
- * Exposes calendar data as JSON for the calendar dashboard
+ * Web App — exposes calendar data + latest AI run for the web dashboard
  *
  * Setup:
- * 1. Paste this file's contents into your existing Apps Script project
- * 2. In Script Properties, add: DASHBOARD_TOKEN = <any long random string>
- * 3. Deploy > New Deployment > Web App
+ * 1. In Script Properties, add: DASHBOARD_TOKEN = <any long random string>
+ * 2. Deploy > New Deployment > Web App
  *    - Execute as: Me
  *    - Who has access: Anyone
- * 4. Copy the Web App URL and store it as APPS_SCRIPT_URL in your Cloudflare Worker secret
+ * 3. Copy the Web App URL → paste as APPS_SCRIPT_URL in Cloudflare Pages env vars
  ***********************/
 
 function doGet(e) {
@@ -873,6 +899,8 @@ function doGet(e) {
     return handleGetCalendars();
   } else if (action === 'events') {
     return handleGetEvents(e.parameter);
+  } else if (action === 'latest_run') {
+    return handleGetLatestRun();
   }
 
   return jsonResponse({ error: 'Unknown action' }, 400);
@@ -927,6 +955,16 @@ function handleGetEvents(params) {
   return jsonResponse(allEvents);
 }
 
+function handleGetLatestRun() {
+  const raw = PropertiesService.getScriptProperties().getProperty('LATEST_RUN_DATA');
+  if (!raw) return jsonResponse({ error: 'No data yet — run gmailAutoCleanV62 first.' }, 404);
+  try {
+    return jsonResponse(JSON.parse(raw));
+  } catch (e) {
+    return jsonResponse({ error: 'Stored data is corrupted.' }, 500);
+  }
+}
+
 function jsonResponse(data, status) {
   const output = ContentService.createTextOutput(JSON.stringify(data));
   output.setMimeType(ContentService.MimeType.JSON);
@@ -934,4 +972,46 @@ function jsonResponse(data, status) {
 }
 
 
+/* =========================
+ * Web Dashboard helpers
+ * ========================= */
 
+/**
+ * Converts AI result items into plain objects safe for JSON serialisation.
+ * Relies on thread_id being set on emailMap items inside buildDailyActionsWithAI.
+ */
+function buildSerializableItems(items, emailMap) {
+  return (items || []).map(item => {
+    const e = emailMap[item.source_index] || {};
+    return {
+      title:     item.title    || '',
+      due_date:  item.due_date || '',
+      reason:    item.reason   || '',
+      from:      e.from        || '',
+      subject:   e.subject     || '',
+      thread_id: e.thread_id   || '',
+    };
+  });
+}
+
+/**
+ * Persists the full run snapshot to Script Properties for the web dashboard.
+ * A typical run snapshot is 5–15 KB; well within the 500 KB total limit.
+ */
+function saveLatestRunToProperties(data) {
+  const json = JSON.stringify(data);
+  PropertiesService.getScriptProperties().setProperty('LATEST_RUN_DATA', json);
+  Logger.log(`Saved latest run data to Script Properties (${json.length} bytes).`);
+}
+
+/**
+ * Scans an array of result-line strings for the first regex match and returns
+ * the captured integer, or 0 if no match is found.
+ */
+function extractNum(lines, regex) {
+  for (const line of (lines || [])) {
+    const m = String(line).match(regex);
+    if (m && m[1]) return parseInt(m[1]) || 0;
+  }
+  return 0;
+}
