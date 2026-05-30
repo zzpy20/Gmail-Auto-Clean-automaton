@@ -286,3 +286,4 @@ function cleanupOldCallReminders() {
 
   if (deletedCount > 0) Logger.log(`cleanupOldCallReminders: 删除 ${deletedCount} 条旧记录`);
 }
+
