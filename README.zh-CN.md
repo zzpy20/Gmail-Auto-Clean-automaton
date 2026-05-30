@@ -124,11 +124,13 @@ npx wrangler kv namespace create GMAIL_DIGEST
 
 在 Apps Script 中设置触发器（触发器 → 添加触发器）：
 
-| 函数 | 计划 |
-|---|---|
-| `gmailAutoCleanV62` | 基于时间 → 天计时器（每天） |
-| `checkCallLabelAndCreateEvent` | 基于时间 → 每分钟 |
-| `pollTelegramMessages` | 基于时间 → 每分钟 |
+| 函数 | 计划 | 说明 |
+|---|---|---|
+| `gmailAutoCleanLight` | 基于时间 → 天计时器（每天） | 轻量每日清理 — 分类、打标签、置顶 |
+| `gmailAutoCleanAI` | 基于时间 → 天计时器（每天） | AI 分析和摘要生成 |
+| `gmailPinOnly` | 基于时间（按需） | 仅将重要邮件置顶到收件箱 |
+| `checkCallLabelAndCreateEvent` | 基于时间 → 每分钟 | 来电提醒 — 监视 `! Call` 标签 |
+| `pollTelegramMessages` | 基于时间 → 每分钟 | Telegram 机器人 — 轮询新指令 |
 
 手动运行一次 `setupCallReminderTrigger()` 和 `setupTelegramPollingTrigger()` 即可自动创建分钟级触发器。
 

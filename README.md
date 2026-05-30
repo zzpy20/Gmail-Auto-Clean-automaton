@@ -124,11 +124,13 @@ npx wrangler kv namespace create GMAIL_DIGEST
 
 Set triggers in Apps Script (Triggers → Add trigger):
 
-| Function | Schedule |
-|---|---|
-| `gmailAutoCleanV62` | Time-driven → Day timer (daily) |
-| `checkCallLabelAndCreateEvent` | Time-driven → Every minute |
-| `pollTelegramMessages` | Time-driven → Every minute |
+| Function | Schedule | Description |
+|---|---|---|
+| `gmailAutoCleanLight` | Time-driven → Day timer (daily) | Lightweight daily clean — categories, labels, pin |
+| `gmailAutoCleanAI` | Time-driven → Day timer (daily) | AI analysis and digest generation |
+| `gmailPinOnly` | Time-driven (as needed) | Pin important emails to inbox only |
+| `checkCallLabelAndCreateEvent` | Time-driven → Every minute | Call Reminder — watches `! Call` label |
+| `pollTelegramMessages` | Time-driven → Every minute | Telegram Bot — polls for new commands |
 
 Run `setupCallReminderTrigger()` and `setupTelegramPollingTrigger()` once manually to create the minute-level triggers automatically.
 
