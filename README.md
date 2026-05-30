@@ -43,7 +43,8 @@ Every day the Apps Script runs and:
 - Browse any day via `https://dash-gmail.1000600.xyz/YYYY-MM-DD`
 - Navigate between days with ← Prev / Next → buttons
 - Must Do / Schedule Later / Info Only sections with AI due-date badges
-- Hover over any item for a full email preview popover
+- Hover over any item for a full email preview popover showing received time, sender, subject, body snippet, and AI reason
+- Hovering dims the rest of the page so the popover stands out clearly
 - Click **Open →** to jump straight to the Gmail thread
 
 ---
