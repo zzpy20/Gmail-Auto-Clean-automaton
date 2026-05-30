@@ -565,13 +565,14 @@ function showPop(itemEl) {
   const ph  = pop.offsetHeight;
   const gap = 10;
 
+  // position: fixed uses viewport-relative coords — do NOT add scrollY/scrollX
   // Prefer above; fall back to below if not enough room
-  const topAbove = r.top - ph - gap + window.scrollY;
-  const topBelow = r.bottom + gap + window.scrollY;
+  const topAbove = r.top - ph - gap;
+  const topBelow = r.bottom + gap;
   const top = (r.top - ph - gap > 8) ? topAbove : topBelow;
 
   // Align to container left edge when available, otherwise align to item
-  const left = cr ? cr.left + window.scrollX : Math.max(8, Math.min(r.left + window.scrollX, window.scrollX + vw - pw - 8));
+  const left = cr ? cr.left : Math.max(8, Math.min(r.left, vw - pw - 8));
 
   pop.style.top  = top + 'px';
   pop.style.left = left + 'px';
