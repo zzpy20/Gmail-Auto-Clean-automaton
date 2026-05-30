@@ -1,3 +1,5 @@
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 # Gmail Auto Clean + Daily Digest Dashboard
 
 Automated Gmail management powered by Google Apps Script and Gemini AI, with a Cloudflare-hosted web dashboard for browsing daily digests.
