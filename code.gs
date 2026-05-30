@@ -481,7 +481,8 @@ function buildDailyActionsWithAI() {
       message_id: latest.getId(),
       from:       latest.getFrom() || "",
       subject:    latest.getSubject() || "",
-      body:       (latest.getPlainBody() || "").slice(0, CONFIG.aiMaxBodyCharsPerEmail)
+      body:       (latest.getPlainBody() || "").slice(0, CONFIG.aiMaxBodyCharsPerEmail),
+      date:       latest.getDate().toISOString(),
     });
   });
 
@@ -984,6 +985,7 @@ function buildSerializableItems(items, emailMap) {
       subject:      e.subject     || '',
       thread_id:    e.thread_id   || '',
       body_snippet: (e.body       || '').slice(0, 300),
+      date:         e.date        || '',
     };
   });
 }
