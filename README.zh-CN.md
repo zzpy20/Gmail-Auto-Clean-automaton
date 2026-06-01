@@ -6,17 +6,25 @@
 
 ## 功能介绍
 
-每天 Apps Script 自动运行并执行以下操作：
+三个触发器函数分别负责不同的处理流程：
 
-1. **置顶**重要邮件到收件箱（银行、学校、政府）
-2. **清理**分类邮件 — 将"更新"/"论坛"/"社交"标记为已读，将"推广"归档
-3. **自动打标签** — `! AUTO/Finance`、`! AUTO/School`、`! AUTO/Work`
-4. **AI 分析**（Gemini）— 读取收件箱中的未读邮件，将每封分类为：
-   - `must_do` — 加星标，添加到 Google Tasks，可选添加到 Google 日历
-   - `schedule_later` — 添加到 Google Tasks
-   - `info_only` — 不做操作
-5. **发送摘要邮件**，附带网页仪表盘链接
-6. **保存摘要**到 Cloudflare KV，每天的结果永久可访问
+**`gmailPinOnly`** — 每 5〜10 分钟运行一次：
+- 将重要邮件（银行、学校、政府）置顶回收件箱
+
+**`gmailAutoCleanLight`** — 每天一次（建议早上 6 点）：
+- 清理分类邮件 — 将"更新"/"论坛"/"社交"标记为已读，将"推广"归档
+- 自动打标签 — `! AUTO/Finance`、`! AUTO/School`、`! AUTO/Work`
+
+**`gmailAutoCleanAI`** — 每天一次（建议早上 7 点）：
+- AI 分析（Gemini）— 将收件箱未读邮件分类为：
+  - `must_do` — 加星标，有截止日期时写入 Google 日历
+  - `schedule_later` — 仅记录
+  - `info_only` — 不做操作
+- AI 结果后处理：
+  - **黑名单发件人**（`aiActionBlocklistSenders`）— 将 `must_do` 降级为 `schedule_later`
+  - **升级发件人**（`aiActionScheduleLaterSenders`）— 将 `info_only` 升级为 `schedule_later`
+- 发送摘要邮件，附带网页仪表盘链接
+- 将摘要保存到 Cloudflare KV，每天的结果永久可访问
 
 **来电提醒**（`CallReminder.gs`）每分钟运行一次：
 
@@ -127,9 +135,9 @@ npx wrangler kv namespace create GMAIL_DIGEST
 
 | 函数 | 计划 | 说明 |
 |---|---|---|
-| `gmailAutoCleanLight` | 基于时间 → 天计时器（每天） | 轻量每日清理 — 分类、打标签、置顶 |
-| `gmailAutoCleanAI` | 基于时间 → 天计时器（每天） | AI 分析和摘要生成 |
-| `gmailPinOnly` | 基于时间（按需） | 仅将重要邮件置顶到收件箱 |
+| `gmailPinOnly` | 基于时间 → 每 5〜10 分钟 | 仅将重要邮件置顶到收件箱 |
+| `gmailAutoCleanLight` | 基于时间 → 天计时器（建议早上 6 点） | 分类清理 + 自动标签 |
+| `gmailAutoCleanAI` | 基于时间 → 天计时器（建议早上 7 点） | AI 分析、执行动作、写入仪表盘、发摘要邮件 |
 | `checkCallLabelAndCreateEvent` | 基于时间 → 每分钟 | 来电提醒 — 监视 `! Call` 标签 |
 | `pollTelegramMessages` | 基于时间 → 每分钟 | Telegram 机器人 — 轮询新指令 |
 
@@ -157,7 +165,9 @@ npx wrangler kv namespace create GMAIL_DIGEST
 | 配置项 | 说明 |
 |---|---|
 | `dryRun` | 设为 `true` 可模拟运行而不做任何实际修改 |
-| `whitelistSenders` | 始终跳过清理和 AI 分析的发件人 |
+| `whitelistSenders` | 完全跳过清理和 AI 分析的发件人 |
+| `aiActionBlocklistSenders` | 此类发件人的 `must_do` 项会被降级为 `schedule_later` |
+| `aiActionScheduleLaterSenders` | 此类发件人的 `info_only` 项会被升级为 `schedule_later` |
 | `categories` | 启用/禁用并配置各 Gmail 分类 |
 | `labelRules` | 用于自动打标签的关键词和发件人 |
 | `aiModel` | Gemini 模型（默认：`gemini-2.5-flash`） |

@@ -6,17 +6,25 @@ Automated Gmail management powered by Google Apps Script and Gemini AI, with a C
 
 ## What it does
 
-Every day the Apps Script runs and:
+Three trigger functions handle different parts of the pipeline:
 
-1. **Pins** important emails back to inbox (banks, school, government)
-2. **Cleans** categories — marks Updates/Forums/Social as read, archives Promotions
-3. **Labels** emails automatically — `! AUTO/Finance`, `! AUTO/School`, `! AUTO/Work`
-4. **AI analysis** (Gemini) — reads unread inbox emails and classifies each into:
-   - `must_do` — starred, added to Google Tasks, optionally added to Google Calendar
-   - `schedule_later` — added to Google Tasks
-   - `info_only` — no action
-5. **Sends a summary email** with a link to the web dashboard
-6. **Saves the digest** to Cloudflare KV so every day's results are permanently accessible
+**`gmailPinOnly`** — runs every 5–10 minutes:
+- Pins important emails back to inbox (banks, school, government)
+
+**`gmailAutoCleanLight`** — runs once daily (recommended 6 am):
+- Cleans categories — marks Updates/Forums/Social as read, archives Promotions
+- Labels emails automatically — `! AUTO/Finance`, `! AUTO/School`, `! AUTO/Work`
+
+**`gmailAutoCleanAI`** — runs once daily (recommended 7 am):
+- AI analysis (Gemini) — classifies each unread inbox email into:
+  - `must_do` — starred, added to Google Calendar if due date found
+  - `schedule_later` — logged only
+  - `info_only` — no action
+- Post-processes AI results:
+  - **Blocklist senders** (`aiActionBlocklistSenders`) — demotes `must_do` → `schedule_later`
+  - **Promote senders** (`aiActionScheduleLaterSenders`) — promotes `info_only` → `schedule_later`
+- Sends a summary email with a link to the web dashboard
+- Saves the digest to Cloudflare KV so every day's results are permanently accessible
 
 **Call Reminder** (`CallReminder.gs`) runs every minute and:
 
@@ -127,9 +135,9 @@ Set triggers in Apps Script (Triggers → Add trigger):
 
 | Function | Schedule | Description |
 |---|---|---|
-| `gmailAutoCleanLight` | Time-driven → Day timer (daily) | Lightweight daily clean — categories, labels, pin |
-| `gmailAutoCleanAI` | Time-driven → Day timer (daily) | AI analysis and digest generation |
-| `gmailPinOnly` | Time-driven (as needed) | Pin important emails to inbox only |
+| `gmailPinOnly` | Time-driven → Every 5–10 minutes | Pin important emails to inbox only |
+| `gmailAutoCleanLight` | Time-driven → Day timer (recommended 6 am) | Category clean + auto labels |
+| `gmailAutoCleanAI` | Time-driven → Day timer (recommended 7 am) | AI analysis, actions, dashboard write, summary email |
 | `checkCallLabelAndCreateEvent` | Time-driven → Every minute | Call Reminder — watches `! Call` label |
 | `pollTelegramMessages` | Time-driven → Every minute | Telegram Bot — polls for new commands |
 
@@ -157,7 +165,9 @@ Create the Gmail label `! Call` manually in Gmail. The script auto-creates `! Ca
 | Setting | Description |
 |---|---|
 | `dryRun` | Set `true` to simulate without making any changes |
-| `whitelistSenders` | Senders always skipped by cleaning and AI |
+| `whitelistSenders` | Senders skipped entirely by cleaning and AI |
+| `aiActionBlocklistSenders` | Senders whose `must_do` items are demoted to `schedule_later` |
+| `aiActionScheduleLaterSenders` | Senders whose `info_only` items are promoted to `schedule_later` |
 | `categories` | Enable/disable and configure each Gmail category |
 | `labelRules` | Keywords and senders used for auto-labelling |
 | `aiModel` | Gemini model (default: `gemini-2.5-flash`) |
