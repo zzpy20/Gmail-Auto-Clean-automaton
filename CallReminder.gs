@@ -17,13 +17,6 @@
  * 这三个工具函数定义在 Code.gs 里，这里直接共用。
  ***********************/
 
-
-/* =========================
-// How to change night time?
-// nightStartHour: 23,     // 夜间开始：11pm
-// nightEndHour: 7,        // 夜间结束：7am
-* ========================= */
-
 const CALL_REMINDER_CONFIG = {
   labelName: "! Call",
   labelDoneName: "! Call - Done",
