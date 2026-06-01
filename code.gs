@@ -40,8 +40,9 @@ const CONFIG = {
   ***********************/
 
   aiActionBlocklistSenders: [
-    "noreply@github.com",
+    "getsidekicker.com",
     "notifications@linkedin.com",
+    "azure@email.microsoft.com",
     // 在这里继续添加...
   ],
 
@@ -132,7 +133,7 @@ const CONFIG = {
     "from:(@eq.edu.au OR @gov.au)",
     "from:(@commbank.com.au OR @cba.com.au OR @westpac.com.au OR @anz.com OR @nab.com.au OR @paypal.com OR @stripe.com OR @linkt.com.au)",
     "subject:(urgent OR invoice OR bill OR quote OR due OR overdue OR fine OR Reference OR infringement OR rego OR ATO OR myGov OR reminder OR 'action required' OR 'important notice')",
-    "",   // 5. 备用
+    "from:auspost.com.au subject:(parcel 'on its way')",   // 5. AusPost 包裹派送通知
     "",   // 6. 备用
     "",   // 7. 备用
     "",   // 8. 备用
