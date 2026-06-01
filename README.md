@@ -94,6 +94,8 @@ _redirects                   # SPA routing for date URLs + 301 redirects for rem
 6. Deploy as **Web App**: Execute as *Me*, Who has access *Anyone*
 7. Copy the Web App URL
 
+> **Always `git pull` before editing locally or pushing**, especially if you've made any changes directly on GitHub web. This prevents your local copy from overwriting changes made on GitHub.
+>
 > **Updating the script later:** Use **Deploy → Manage deployments → Edit (pencil) → New version → Deploy** to keep the same URL. If you accidentally create a *New deployment* (which generates a new URL), update `APPS_SCRIPT_URL` in Cloudflare env vars and redeploy Pages:
 > ```bash
 > npx wrangler pages deploy . --project-name gmail-dashboard --branch main

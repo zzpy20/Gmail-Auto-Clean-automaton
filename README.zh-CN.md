@@ -94,6 +94,8 @@ _redirects                   # SPA 路由日期 URL + 已删除页面的 301 重
 6. 部署为 **Web App**：执行身份选"我"，访问权限选"任何人"
 7. 复制 Web App URL
 
+> **编辑本地文件或推送前，务必先执行 `git pull`**，尤其是在 GitHub 网页上直接修改过文件之后。否则本地版本可能会覆盖 GitHub 上的改动。
+>
 > **后续更新脚本：** 使用 **部署 → 管理部署 → 编辑（铅笔图标）→ 新版本 → 部署** 来保持同一 URL 不变。如果不小心创建了新部署（会生成新 URL），需在 Cloudflare 环境变量中更新 `APPS_SCRIPT_URL` 并重新部署 Pages：
 > ```bash
 > npx wrangler pages deploy . --project-name gmail-dashboard --branch main
