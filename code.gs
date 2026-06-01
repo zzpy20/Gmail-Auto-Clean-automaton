@@ -10,6 +10,10 @@
  * - dryRun 模式
  * - AI 结果去重
  * - Pin to Inbox：将符合条件的邮件移入收件箱并标记未读
+ *
+ * Trigger 设置：
+ * - gmailAutoCleanLight  → 每分钟执行（Pin + 分类清理 + 自动标签）
+ * - gmailAutoCleanAI     → 每天一次，建议早上 7 点（AI 分析 + 写 Dashboard + 发摘要邮件）
  ***********************/
 
 const CONFIG = {
@@ -26,6 +30,28 @@ const CONFIG = {
     promotions: { enabled: true, action: "markReadAndArchive" },
     social:     { enabled: true, olderThanDays: 14, action: "markRead" }
   },
+
+  // ===== AI Action 黑名单发件人 =====
+  // 这些发件人的邮件永远只放 info_only，不会生成 must_do / schedule_later
+  /***********************
+  *黑名单支持部分匹配，比如填 "github.com" 就能匹配所有 @github.com 的发件人，不需要写完整地址
+  *被移走的 items 不会消失，仍然出现在 info_only，所以邮件摘要里还能看到，只是不会加星、不会创建 Task/Calendar
+  *这个黑名单和 whitelistSenders（跳过所有处理）是两回事——黑名单的邮件仍然会被 AI 分析，只是行动结果被降级
+  ***********************/
+
+  aiActionBlocklistSenders: [
+    "noreply@github.com",
+    "notifications@linkedin.com",
+    // 在这里继续添加...
+  ],
+
+  // ===== Schedule Later 强制升级发件人 =====
+  // 这些发件人的邮件如果被 AI 归入 info_only，会强制升级到 schedule_later
+  // must_do 和 schedule_later 的结果保持不变
+  aiActionScheduleLaterSenders: [
+    "auspost.com.au",
+    // 在这里继续添加...
+  ],
 
   // ===== 白名单发件人 =====
   whitelistSenders: [
@@ -117,11 +143,30 @@ const CONFIG = {
 
 
 /* =========================
- * 主函数
+ * Trigger 1a 入口 — 每5〜10分钟执行
+ * 只跑 Pin to Inbox，API 调用极少
+ * 确保重要邮件及时被捞回收件箱
  * ========================= */
 
-function gmailAutoCleanV62() {
-  const DASHBOARD_URL = 'https://dash-gmail.1000600.xyz';
+function gmailPinOnly() {
+  try {
+    const pinResults = pinImportantEmailsToInbox();
+    Logger.log(pinResults.join("\n"));
+  } catch (error) {
+    Logger.log(`ERROR: ${error.stack || error}`);
+    if (CONFIG.sendErrorEmail) sendErrorAlert(error);
+    throw error;
+  }
+}
+
+
+/* =========================
+ * Trigger 1b 入口 — 每天一次（建议早上 6 点，早于 AI trigger）
+ * 轻量任务：分类清理 + 自动标签
+ * 无 AI 调用，无 Pin
+ * ========================= */
+
+function gmailAutoCleanLight() {
   const runStartedAt = new Date();
   const executionSummary = [];
 
@@ -131,25 +176,43 @@ function gmailAutoCleanV62() {
 
     executionSummary.push(`Run time: ${runStartedAt}`);
     executionSummary.push(`Dry run: ${CONFIG.dryRun}`);
-    executionSummary.push(`AI runs in dry mode: ${CONFIG.aiRunInDryMode}`);
-
-    // 0) Pin 置顶 — 最先运行，避免被后续模块标记已读
-    const pinResults = pinImportantEmailsToInbox();
-    executionSummary.push("=== Pin to Inbox ===");
-    pinResults.forEach(line => executionSummary.push(line));
 
     // 1) 分类清理
     const categoryResults = processConfiguredCategories();
     executionSummary.push("=== Category Processing ===");
     categoryResults.forEach(line => executionSummary.push(line));
 
-    // 2) 自动标签 — declared outside block so stats can read it below
-    let labelResults = [];
+    // 2) 自动标签
     if (CONFIG.autoLabelsEnabled) {
-      labelResults = applyAutoLabels();
+      const labelResults = applyAutoLabels();
       executionSummary.push("=== Auto Labels ===");
       labelResults.forEach(line => executionSummary.push(line));
     }
+
+    Logger.log(executionSummary.join("\n"));
+
+  } catch (error) {
+    Logger.log(`ERROR: ${error.stack || error}`);
+    if (CONFIG.sendErrorEmail) sendErrorAlert(error);
+    throw error;
+  }
+}
+
+
+/* =========================
+ * Trigger 2 入口 — 每天一次（建议早上 7 点）
+ * 重量任务：AI 分析 + 执行动作 + Dashboard + 摘要邮件
+ * ========================= */
+
+function gmailAutoCleanAI() {
+  const DASHBOARD_URL = 'https://dash-gmail.1000600.xyz';
+  const runStartedAt = new Date();
+  const executionSummary = [];
+
+  try {
+    executionSummary.push(`Run time: ${runStartedAt}`);
+    executionSummary.push(`Dry run: ${CONFIG.dryRun}`);
+    executionSummary.push(`AI runs in dry mode: ${CONFIG.aiRunInDryMode}`);
 
     // 3) AI 提取动作
     let aiResult = null;
@@ -161,7 +224,7 @@ function gmailAutoCleanV62() {
       executionSummary.push(`Info only: ${aiResult.info_only.length}`);
     }
 
-    // 4) 执行动作：加星 / Tasks / Calendar — declared outside block so stats can read it below
+    // 4) 执行动作：加星 / Tasks / Calendar
     let actionResults = [];
     if (aiResult) {
       actionResults = processAIActionResults(aiResult);
@@ -179,17 +242,9 @@ function gmailAutoCleanV62() {
         run_time: runStartedAt.toISOString(),
         dry_run:  CONFIG.dryRun,
         stats: {
-          pin_to_inbox:        extractNum(pinResults,      /(\d+)\s*封邮件/),
-          updates_marked_read: extractNum(categoryResults, /Updates.*?:\s*(\d+)/),
-          forums_marked_read:  extractNum(categoryResults, /Forums.*?:\s*(\d+)/),
-          promotions_archived: extractNum(categoryResults, /Promotions.*?:\s*(\d+)/),
-          social_marked_read:  extractNum(categoryResults, /Social.*?:\s*(\d+)/),
-          finance_labeled:     extractNum(labelResults,    /Finance labeled:\s*(\d+)/),
-          school_labeled:      extractNum(labelResults,    /School labeled:\s*(\d+)/),
-          work_labeled:        extractNum(labelResults,    /Work labeled:\s*(\d+)/),
-          starred_count:       extractNum(actionResults,   /Starred.*?:\s*(\d+)/),
-          tasks_created:       extractNum(actionResults,   /Tasks created:\s*(\d+)/),
-          calendar_events:     extractNum(actionResults,   /Calendar events.*?:\s*(\d+)/),
+          starred_count:   extractNum(actionResults, /Starred.*?:\s*(\d+)/),
+          tasks_created:   extractNum(actionResults, /Tasks created:\s*(\d+)/),
+          calendar_events: extractNum(actionResults, /Calendar events.*?:\s*(\d+)/),
         },
         must_do:        buildSerializableItems(aiResult.must_do,        aiResult.emailMap),
         schedule_later: buildSerializableItems(aiResult.schedule_later, aiResult.emailMap),
@@ -200,14 +255,14 @@ function gmailAutoCleanV62() {
       if (!CONFIG.dryRun) writeRunToDashboard(latestRunData);
     }
 
-    // 6) 发汇总邮件 — dashboard link at top
+    // 6) 发汇总邮件
     if (CONFIG.sendExecutionSummaryEmail) {
       let body = `View dashboard: ${DASHBOARD_URL}\n\n` + executionSummary.join("\n");
       if (aiResult) {
         body += "\n\n=== 今日待办（来自邮件）===\n\n";
         body += formatActionDigest(aiResult);
       }
-      sendExecutionSummaryEmail(body, "Gmail Auto Clean v6.2 Summary");
+      sendExecutionSummaryEmail(body, "Gmail Auto Clean v6.2 AI Summary");
     }
 
     Logger.log(executionSummary.join("\n"));
@@ -501,20 +556,40 @@ function buildDailyActionsWithAI() {
   }
 
   const prompt = [
-    "你是一个高效的个人助理。",
+    "你是一个高效的个人助理，帮我处理澳大利亚家庭和工作相关的邮件。",
     "请根据下面邮件，提取行动项，并且只输出 JSON。",
     "",
-    "要求：",
+    "分类标准：",
+    "",
+    "must_do（必须处理）— 满足以下任意一条：",
+    "- 涉及付款、账单、发票、逾期、欠款",
+    "- 来自政府机构：ATO、myGov、Services Australia、议会、法院",
+    "- 需要我亲自回复或确认（对方在等我的答复）",
+    "- 有明确截止日期（无论远近）",
+    "- 不处理可能产生罚款、逾期费用或法律后果",
+    "- 学校相关通知包含任何日期信息（活动日期、截止日期、缴费日期等，包括相对日期如「下周五」「本周三」）",
+    "",
+    "schedule_later（稍后安排）— 满足以下任意一条，且不符合 must_do 标准：",
+    "- 学校相关通知需要家长跟进（回条、活动报名、费用缴纳），且邮件中完全没有提及任何日期",
+    "- 工作相关邮件但无紧急截止日期且无明确截止日期",
+    "- 会议、预约、活动邀请且无明确日期",
+    "",
+    "info_only（仅供参考，无需操作）— 符合以下任意一条，直接归入此类，不得归入上面两类：",
+    "- 快递、物流、包裹状态通知",
+    "- 登录提醒、安全验证码、双重验证通知",
+    "- 系统自动生成的付款成功/收据确认",
+    "- newsletter、促销、广告、订阅内容",
+    "- 社交媒体通知（LinkedIn、Facebook、Instagram 等）",
+    "",
+    "其他要求：",
     "1. 输出必须是合法 JSON",
     "2. 顶层结构必须是：{ \"must_do\": [], \"schedule_later\": [], \"info_only\": [] }",
     "3. 每个对象字段：{ \"source_index\": 1, \"title\": \"xxx\", \"due_date\": \"YYYY-MM-DD 或空字符串\", \"reason\": \"xxx\" }",
     "4. source_index 必须对应邮件编号",
-    "5. must_do：需要尽快处理",
-    "6. schedule_later：可稍后安排",
-    "7. info_only：纯通知、无需行动",
-    "8. 不要编造日期；没有明确日期就输出空字符串",
-    "9. title 必须是可执行动作，简洁中文",
-    "10. 相同或高度相似的任务只保留一条",
+    "5. 不要编造日期；没有明确日期就输出空字符串",
+    "6. title 必须是可执行动作，简洁中文，例如「回复 XXX 确认预约」「支付 XXX 账单」",
+    "7. reason 简短说明为什么这样分类",
+    "8. 相同或高度相似的任务只保留一条",
     "",
     "以下是邮件：",
     ""
@@ -539,12 +614,18 @@ function buildDailyActionsWithAI() {
 
   const json = JSON.parse(text);
   const raw = json?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  const parsed = parseAiJson(raw);
+  let parsed = parseAiJson(raw);
 
   parsed.must_do        = dedupeActionItems(Array.isArray(parsed.must_do)        ? parsed.must_do        : []);
   parsed.schedule_later = dedupeActionItems(Array.isArray(parsed.schedule_later)  ? parsed.schedule_later : []);
   parsed.info_only      = dedupeActionItems(Array.isArray(parsed.info_only)       ? parsed.info_only      : []);
   parsed.emailMap = emailMap;
+
+  // 黑名单后处理：强制将黑名单发件人的 must_do 降级到 schedule_later
+  parsed = enforceAiActionBlocklist(parsed, emailMap);
+
+  // schedule_later 升级列表：将指定发件人的 info_only 升级到 schedule_later
+  parsed = enforceAiScheduleLaterList(parsed, emailMap);
 
   return parsed;
 }
@@ -574,6 +655,70 @@ function dedupeActionItems(items) {
   });
 }
 
+function enforceAiActionBlocklist(parsed, emailMap) {
+  if (!CONFIG.aiActionBlocklistSenders || CONFIG.aiActionBlocklistSenders.length === 0) {
+    return parsed;
+  }
+
+  const blocklist = CONFIG.aiActionBlocklistSenders.map(s => s.toLowerCase().trim());
+
+  function isBlocked(item) {
+    const emailItem = emailMap[item.source_index];
+    if (!emailItem) return false;
+    const from = extractEmailAddress(emailItem.from).toLowerCase();
+    return blocklist.some(blocked => from.includes(blocked));
+  }
+
+  // 只从 must_do 里移除，降级到 schedule_later
+  // schedule_later 和 info_only 由 AI 自己判断，保持不变
+  const blockedFromMustDo = parsed.must_do.filter(item => isBlocked(item));
+
+  parsed.must_do = parsed.must_do.filter(item => !isBlocked(item));
+
+  // 降级到 schedule_later，再去重
+  parsed.schedule_later = dedupeActionItems([
+    ...parsed.schedule_later,
+    ...blockedFromMustDo,
+  ]);
+
+  if (blockedFromMustDo.length > 0) {
+    Logger.log(`AI Blocklist: 移动了 ${blockedFromMustDo.length} 个 must_do 到 schedule_later`);
+  }
+
+  return parsed;
+}
+
+function enforceAiScheduleLaterList(parsed, emailMap) {
+  if (!CONFIG.aiActionScheduleLaterSenders || CONFIG.aiActionScheduleLaterSenders.length === 0) {
+    return parsed;
+  }
+
+  const schedulelist = CONFIG.aiActionScheduleLaterSenders.map(s => s.toLowerCase().trim());
+
+  function isScheduleLater(item) {
+    const emailItem = emailMap[item.source_index];
+    if (!emailItem) return false;
+    const from = extractEmailAddress(emailItem.from).toLowerCase();
+    return schedulelist.some(s => from.includes(s));
+  }
+
+  // 只从 info_only 里升级到 schedule_later
+  // must_do 和 schedule_later 保持不变
+  const promotedFromInfoOnly = parsed.info_only.filter(item => isScheduleLater(item));
+  parsed.info_only = parsed.info_only.filter(item => !isScheduleLater(item));
+
+  parsed.schedule_later = dedupeActionItems([
+    ...parsed.schedule_later,
+    ...promotedFromInfoOnly,
+  ]);
+
+  if (promotedFromInfoOnly.length > 0) {
+    Logger.log(`AI ScheduleLater List: 升级了 ${promotedFromInfoOnly.length} 个 info_only 到 schedule_later`);
+  }
+
+  return parsed;
+}
+
 
 /* =========================
  * 4) 执行动作
@@ -595,7 +740,7 @@ function processAIActionResults(aiResult) {
       GmailApp.starMessages([emailItem.message]);
       starredCount++;
 
-      if (CONFIG.tasksEnabled) { createGoogleTask(item, "must_do"); taskCount++; }
+      // must_do: Calendar only, no Google Task
 
       if (CONFIG.calendarEnabled && CONFIG.calendarCreateOnlyForMustDo && isValidIsoDate(item.due_date)) {
         createCalendarEntry(item, emailItem);
@@ -614,7 +759,7 @@ function processAIActionResults(aiResult) {
     if (isProcessedKey(uniqueKey)) return;
 
     if (!CONFIG.dryRun) {
-      if (CONFIG.tasksEnabled) { createGoogleTask(item, "schedule_later"); taskCount++; }
+      // schedule_later: no Google Task created
       markProcessedKey(uniqueKey);
     }
   });
@@ -951,7 +1096,7 @@ function handleGetEvents(params) {
 
 function handleGetLatestRun() {
   const raw = PropertiesService.getScriptProperties().getProperty('LATEST_RUN_DATA');
-  if (!raw) return jsonResponse({ error: 'No data yet — run gmailAutoCleanV62 first.' }, 404);
+  if (!raw) return jsonResponse({ error: 'No data yet — run gmailAutoCleanAI first.' }, 404);
   try {
     return jsonResponse(JSON.parse(raw));
   } catch (e) {
