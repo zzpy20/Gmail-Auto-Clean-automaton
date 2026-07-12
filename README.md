@@ -2,6 +2,8 @@
 
 # Gmail Auto Clean + Daily Digest Dashboard
 
+**Live Google Apps Script project:** `GmailAutoCleanV6`. This repo is a git-backed mirror of that project's code — Apps Script has no native git integration, so keep the two in sync manually (paste from Apps Script → diff → push, same workflow as the `Twilio-V2` repo).
+
 Automated Gmail management powered by Google Apps Script and Gemini AI, with a Cloudflare-hosted web dashboard for browsing daily digests.
 
 ## What it does

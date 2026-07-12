@@ -2,6 +2,8 @@
 
 # Gmail 自动清理 + 每日摘要仪表盘
 
+**对应的 Google Apps Script 项目：**`GmailAutoCleanV6`。本仓库是这个 Apps Script 项目代码的 git 镜像——Apps Script 本身没有原生的 git 集成，两边需要手动保持同步（从 Apps Script 里复制代码 → 比对 → 推送到 GitHub，跟 `Twilio-V2` 仓库用的是同一套流程）。
+
 基于 Google Apps Script 和 Gemini AI 的自动化 Gmail 管理工具，配合 Cloudflare 托管的网页仪表盘，可随时浏览每日摘要。
 
 ## 功能介绍
