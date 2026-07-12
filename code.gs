@@ -1,5 +1,6 @@
 /***********************
  * Gmail Auto Clean v6.2
+ * Github repo: Gmail-Auto-Clean-automaton
  * 功能：
  * - 分类清理（Updates / Forums / Promotions / Social）
  * - 自动标签（! AUTO/Finance / School / Work）
